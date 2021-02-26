@@ -1,0 +1,178 @@
+---
+title: "Exercise 3"
+author: "Carilli"
+date: '`r format(lubridate::today(), "%B %d, %Y")`'
+output: 
+  html_document:
+    theme: cerulean
+    highlight: tango
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      options(digits = 3, scipen = 999))
+library(tidyverse)
+# library(jtools)
+# library(magrittr)
+# library(broom)
+# library(kableExtra)
+# library(xts)
+# library(orcutt)
+# library(sandwich)
+# library(fastDummies)
+# library(tseries)
+```
+
+```{r 3data}
+bond <- 
+  here::here("data", "BondUpdate.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>% 
+  mutate(actor = as_factor(actor)) %>% 
+  rename(year_released = yearreleased, adj_gross_in_1000 = adjgrossin1000,
+        adj_budget_in_1000 = adjbudgetin1000) 
+```
+
+### (a)
+
+```{r 3a}
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  jtools::summ(digits = 4)
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  jtools::summ(digits = 4,
+       scale = TRUE,
+       transform.response = TRUE)
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .)  %>%
+  broom::augment() %>%
+  mutate(date = bond$year_released) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+bond %>% 
+  mutate(gross_rev = scale(gross_rev),
+         rating = scale(rating),
+         budget = scale(budget)) %$% 
+  lm(gross_rev ~ rating + budget, .)  %>%
+  broom::augment() %>%
+  mutate(date = bond$year_released) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy()
+
+```
+
+
+### (b)
+
+```{r 3b}
+lmtest::coeftest(
+  bond %>%
+    lm(gross_rev ~ rating + budget, .),
+  
+  vcov. =
+    
+    sandwich::NeweyWest(
+      bond %>%
+        lm(gross_rev ~ rating + budget, .),
+      lag = ceiling(length(bond$year_released)) ^ .25,
+      prewhite = FALSE,
+      adjust = TRUE
+    )
+) 
+```
+
+### (c)
+
+```{r 3c}
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+.resid <- 
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  orcutt::residual.orcutt()
+
+lm(.resid ~ lag(.resid)) %>% 
+  jtools::summ(digits = 4)
+
+```
+
+### (d)
+
+```{r 3d}
+bond %>%
+  lm(gross_rev ~ rating + budget + lag(gross_rev), .) %>%
+  jtools::summ(digits = 4)
+
+beta <-
+  bond %>%
+  lm(gross_rev ~ rating + budget + lag(gross_rev), .) %>%
+  broom::tidy() %>%
+  pull(estimate)
+
+```
+
+The short term effect is $\hat{\beta_1} = `r beta[2]`$.  The long term effect is $\frac{\hat{\beta_1}}{1 - \hat{\gamma}} = `r beta[2]/(1 - beta[4])`$
+
+
+### (e)
+
+```{r 3e}
+bond %>% 
+  pull(gross_rev) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy()
+
+bond %>% 
+  pull(budget) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy() 
+
+bond %>% 
+  pull(rating) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy() 
+```
+
+### (f)
+
+```{r 3f}
+bond %>% 
+  lm(diff(gross_rev) ~ diff(rating) + diff(budget), .) %>% 
+  broom::tidy() 
+```
+
+### (g)
+
+
+```{r}
+bond %>% 
+  fastDummies::dummy_cols(select_columns = "actor") %>% 
+  lm(diff(gross_rev) ~ diff(rating) + diff(budget) +
+       diff(actor_Connery) + diff(actor_Moore) + 
+       diff(actor_Brosnan) + diff(actor_Craig) + diff(actor_Dalton), .) %>% 
+  jtools::summ(digits = 4)
+```
+
+ 

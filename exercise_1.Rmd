@@ -1,0 +1,75 @@
+---
+title: "Exercise 1"
+author: "Carilli"
+date: '`r format(lubridate::today(), "%Y-%B-%d")`'
+output: 
+  html_document:
+    theme: cerulean
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      options(digits = 3, scipen = 999))
+library(tidyverse)
+```
+
+```{r 1data}
+bike <- 
+  here::here("data", "BikeShare.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>% 
+  rename(low_temp = lowtemp, school_vacation = schoolvacation)
+```
+
+### (a)
+
+```{r 1a}
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  broom::augment() %>% 
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() 
+```
+
+
+### (b)
+
+```{r 1b}
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  summary
+
+lmtest::coeftest(
+  bike %>%
+    lm(trips ~ low_temp + weekend, .),
+  vcov. =
+    sandwich::NeweyWest(
+      bike %>%
+        lm(trips ~ low_temp + weekend, .),
+      lag = ceiling(length(bike$low_temp) ^ .25),
+      prewhite = FALSE,
+      adjust = TRUE
+    )
+)
+```
+
+### (c)
+
+```{r 1c}
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+#Prais-Winsten Correction
+
+bike %>% 
+  prais::prais_winsten(trips ~ low_temp + weekend, .) 
+```
+

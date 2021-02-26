@@ -1,0 +1,381 @@
+---
+title: "Chapter 13 Homework"
+author: "Carilli"
+date: '`r format(lubridate::today(), "%B %d, %Y")`'
+output: 
+  html_document:
+    toc: false
+    toc_float: false
+    df_print: paged
+    theme: cerulean
+    highlight: tango
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, message = FALSE, error = FALSE,
+                      options(digits = 3, scipen = 999))
+library(tidyverse)
+```
+
+# Exercises {.tabset}
+
+## Exercise 1 {.tabset}
+
+```{r 1data}
+bike <- 
+  here::here("data", "BikeShare.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>% 
+  rename(low_temp = lowtemp, school_vacation = schoolvacation)
+```
+
+### (a)
+
+```{r 1a}
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  broom::augment() %>% 
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() 
+```
+
+
+### (b)
+
+```{r 1b}
+lmtest::coeftest(
+  bike %>% 
+  lm(trips ~ low_temp + weekend, .),
+  
+  vcov. = 
+sandwich::NeweyWest(
+  bike %>% 
+  lm(trips ~ low_temp + weekend, .),   
+    lag = ceiling(length(bike$low_temp)^.25),
+  prewhite = FALSE,
+  adjust = TRUE
+)
+)
+```
+
+### (c)
+
+```{r 1c}
+bike %>% 
+  lm(trips ~ low_temp + weekend, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+bike %$% 
+  lm(trips ~ low_temp + weekend) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+#Prais-Winsten Correction
+
+bike %>% 
+  prais::prais_winsten(trips ~ low_temp + weekend, .) 
+```
+
+
+## Exercise 2 {.tabset}
+```{r 2data}
+fed <- 
+  here::here("data", "fed_2012_kkedits.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>% 
+  rename(fed_funds = fedfunds) %>% 
+  mutate(date = seq(as.Date("1953-01-01"), by = "quarters", length.out = 232)) %>% 
+  select(date, fed_funds, democrat, quarters = election, inflation) %>% 
+  drop_na()
+  
+```
+
+### (a)
+
+```{r 2a}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  jtools::summ(digits = 4)
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>%
+  broom::augment() %>%
+  mutate(date = fed$date) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+fed %$% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy()
+
+```
+
+
+### (b)
+
+```{r 2b}
+lmtest::coeftest(
+  fed %>% 
+    lm(fed_funds ~ democrat * quarters + inflation, .),
+  
+  vcov. = 
+    
+    sandwich::NeweyWest(
+      fed %>% 
+        lm(fed_funds ~ democrat * quarters + inflation, .),
+      lag = ceiling(length(fed$quarters))^.25,
+      prewhite = FALSE,
+      adjust = TRUE
+    )
+  )
+```
+
+### (c)
+
+```{r 2c}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+# manually
+
+rho <- 
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() %>% 
+  filter(term == "lag(.resid)") %>% 
+  pull(estimate)
+
+fed %>% 
+  mutate(fed_funds = fed_funds - rho * lag(fed_funds),
+         dem_quarters = democrat * quarters - rho * lag(democrat * quarters), 
+         democrat = democrat - rho * lag(democrat),
+         quarters = quarters - rho * lag(quarters),
+         inflation = inflation - rho * lag(inflation)) %$% 
+  lm(fed_funds ~ democrat + quarters + dem_quarters  + inflation) %>% 
+  broom::tidy() 
+  
+```
+
+### (d)
+
+```{r 2d}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  jtools::summ(digits = 4)
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>%
+  broom::augment() %>%
+  mutate(date = fed$date[2:226]) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() 
+```
+
+### (e)
+
+```{r 2e}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy()
+
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+# manually
+
+rho <- 
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() %>% 
+  filter(term == "lag(.resid)") %>% 
+  pull(estimate)
+
+fed %>% 
+  mutate(fed_funds = fed_funds - rho * lag(fed_funds),
+         dem_quarters = democrat * quarters - rho * lag(democrat * quarters), 
+         democrat = democrat - rho * lag(democrat),
+         quarters = quarters - rho * lag(quarters),
+         inflation = inflation - rho * lag(inflation),
+         ffr = lag(fed_funds) - rho * lag(fed_funds, 2)) %>% 
+  lm(fed_funds ~ democrat + quarters + dem_quarters  + inflation + ffr, .) %>% 
+  jtools::summ(digits = 4)
+```
+
+## Exercise 3 {.tabset}
+```{r 3data}
+bond <- 
+  here::here("data", "BondUpdate.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>% 
+  mutate(actor = as_factor(actor)) %>% 
+  rename(year_released = yearreleased, adj_gross_in_1000 = adjgrossin1000,
+        adj_budget_in_1000 = adjbudgetin1000) 
+```
+
+### (a)
+
+```{r 3a}
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  jtools::summ(digits = 4)
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  jtools::summ(digits = 4,
+       scale = TRUE,
+       transform.response = TRUE)
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .)  %>%
+  broom::augment() %>%
+  mutate(date = bond$year_released) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+bond %>% 
+  mutate(gross_rev = scale(gross_rev),
+         rating = scale(rating),
+         budget = scale(budget)) %$% 
+  lm(gross_rev ~ rating + budget, .)  %>%
+  broom::augment() %>%
+  mutate(date = bond$year_released) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy()
+
+```
+
+
+### (b)
+
+```{r 3b}
+lmtest::coeftest(
+  bond %>%
+    lm(gross_rev ~ rating + budget, .),
+  
+  vcov. =
+    
+    sandwich::NeweyWest(
+      bond %>%
+        lm(gross_rev ~ rating + budget, .),
+      lag = ceiling(length(bond$year_released)) ^ .25,
+      prewhite = FALSE,
+      adjust = TRUE
+    )
+) 
+```
+
+### (c)
+
+```{r 3c}
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+.resid <- 
+bond %>% 
+  lm(gross_rev ~ rating + budget, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  orcutt::residual.orcutt()
+
+lm(.resid ~ lag(.resid)) %>% 
+  jtools::summ(digits = 4)
+
+```
+
+### (d)
+
+```{r 3d}
+bond %>%
+  lm(gross_rev ~ rating + budget + lag(gross_rev), .) %>%
+  jtools::summ(digits = 4)
+
+beta <-
+  bond %>%
+  lm(gross_rev ~ rating + budget + lag(gross_rev), .) %>%
+  broom::tidy() %>%
+  pull(estimate)
+
+```
+
+The short term effect is $\hat{\beta_1} = `r beta[2]`$.  The long term effect is $\frac{\hat{\beta_1}}{1 - \hat{\gamma}} = `r beta[2]/(1 - beta[4])`$
+
+
+### (e)
+
+```{r 3e}
+bond %>% 
+  pull(gross_rev) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy()
+
+bond %>% 
+  pull(budget) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy() 
+
+bond %>% 
+  pull(rating) %>% 
+  tseries::adf.test(k = 1) %>% 
+  broom::tidy() 
+```
+
+### (f)
+
+```{r 3f}
+bond %>% 
+  lm(diff(gross_rev) ~ diff(rating) + diff(budget), .) %>% 
+  broom::tidy() 
+```
+
+### (g)
+
+
+```{r}
+bond %>% 
+  fastDummies::dummy_cols(select_columns = "actor") %>% 
+  lm(diff(gross_rev) ~ diff(rating) + diff(budget) +
+       diff(actor_Connery) + diff(actor_Moore) + 
+       diff(actor_Brosnan) + diff(actor_Craig) + diff(actor_Dalton), .) %>% 
+  jtools::summ(digits = 4)
+```

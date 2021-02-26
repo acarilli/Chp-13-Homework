@@ -1,0 +1,176 @@
+---
+title: "Exercise 2"
+author: "Carilli"
+date: '`r format(lubridate::today(), "%B %d, %Y")`'
+output: 
+  html_document:
+    theme: cerulean
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, warning = FALSE, message = FALSE,
+                      options(digits = 3, scipen = 999))
+library(tidyverse)
+# library(janitor)
+# library(jtools)
+# library(magrittr)
+# library(broom)
+# library(kableExtra)
+# library(xts)
+# library(orcutt)
+# library(sandwich)
+```
+
+```{r 2data}
+fed <-
+  here::here("data", "fed_2012_kkedits.csv") %>%
+  read_csv() %>%
+  janitor::clean_names() %>%
+  rename(fed_funds = fedfunds) %>%
+  mutate(date = seq(as.Date("1953-01-01"), 
+                    by = "quarters", length.out = 232)) %>%
+  select(date, fed_funds, democrat, 
+         quarters = election, inflation) %>%
+  drop_na()
+
+```
+
+### (a)
+
+```{r 2a}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  jtools::summ(digits = 4)
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>%
+  broom::augment() %>%
+  mutate(date = fed$date) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy()
+
+```
+
+
+### (b)
+
+```{r 2b}
+lmtest::coeftest(
+  fed %>%
+    lm(fed_funds ~ democrat * quarters + inflation, .),
+  
+  vcov. =
+    
+    sandwich::NeweyWest(
+      fed %>%
+        lm(fed_funds ~ democrat * quarters + inflation, .),
+      lag = ceiling(length(fed$quarters)) ^ .25,
+      prewhite = FALSE,
+      adjust = TRUE
+    )
+)
+```
+
+### (c)
+
+```{r 2c}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy() 
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+# manually
+
+rho <- 
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation, .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() %>% 
+  filter(term == "lag(.resid)") %>% 
+  pull(estimate)
+
+fed %>% 
+  mutate(fed_funds = fed_funds - rho * lag(fed_funds),
+         dem_quarters = democrat * quarters - rho * lag(democrat * quarters), 
+         democrat = democrat - rho * lag(democrat),
+         quarters = quarters - rho * lag(quarters),
+         inflation = inflation - rho * lag(inflation)) %$% 
+  lm(fed_funds ~ democrat + quarters + dem_quarters  + inflation) %>% 
+  broom::tidy() 
+  
+```
+
+### (d)
+
+```{r 2d}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  jtools::summ(digits = 4)
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>%
+  broom::augment() %>%
+  mutate(date = fed$date[2:226]) %>% 
+  ggplot(aes(x = date, y = .resid)) + 
+  # geom_point() +
+  geom_line()
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() 
+```
+
+### (e)
+
+```{r 2e}
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::tidy()
+
+
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  orcutt::cochrane.orcutt() %>% 
+  broom::glance() 
+
+# manually
+
+rho <- 
+fed %>% 
+  lm(fed_funds ~ democrat * quarters + inflation + lag(fed_funds), .) %>% 
+  broom::augment() %>%
+  lm(.resid ~ lag(.resid), .) %>% 
+  broom::tidy() %>% 
+  filter(term == "lag(.resid)") %>% 
+  pull(estimate)
+
+fed %>% 
+  mutate(fed_funds = fed_funds - rho * lag(fed_funds),
+         dem_quarters = democrat * quarters - rho * lag(democrat * quarters), 
+         democrat = democrat - rho * lag(democrat),
+         quarters = quarters - rho * lag(quarters),
+         inflation = inflation - rho * lag(inflation),
+         ffr = lag(fed_funds) - rho * lag(fed_funds, 2)) %>% 
+  lm(fed_funds ~ democrat + quarters + dem_quarters  + inflation + ffr, .) %>% 
+  jtools::summ(digits = 4)
+```
+
+
+
